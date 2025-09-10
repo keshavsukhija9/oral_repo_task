@@ -4,8 +4,8 @@
 
 ```bash
 # 1. Clone & Setup Backend
-git clone <your-repo-url>
-cd oral-health-app/backend
+git clone https://github.com/keshavsukhija9/oral_task.git
+cd oral_task/backend
 npm install
 npm run setup-test-users
 npm run dev
