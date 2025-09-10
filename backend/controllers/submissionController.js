@@ -166,16 +166,20 @@ exports.generateReport = async (req, res) => {
     }
 
     // Only Annotated Image
-    if (submission.annotatedImageUrl) {
-      const annotatedImagePath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
-      console.log('Looking for annotated image at:', annotatedImagePath);
-      if (fs.existsSync(annotatedImagePath)) {
-        doc.image(annotatedImagePath, { width: 500 });
+    try {
+      if (submission.annotatedImageUrl) {
+        const annotatedImagePath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
+        if (fs.existsSync(annotatedImagePath)) {
+          doc.image(annotatedImagePath, { width: 500 });
+        } else {
+          doc.text('Annotated image not found');
+        }
       } else {
-        doc.text('Annotated image not found');
+        doc.text('No annotated image available');
       }
-    } else {
-      doc.text('No annotated image available');
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      doc.text('Error processing image');
     }
 
     doc.end();
