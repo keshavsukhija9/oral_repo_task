@@ -115,15 +115,12 @@ exports.generateReport = async (req, res) => {
       return res.status(404).json({ message: 'Submission not found' });
     }
 
-    // Check if user has access to this submission
     if (req.user.role !== 'admin' && submission.patient.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Accept doctor's notes from POST body, query params, or existing saved notes
     const doctorNotes = (req.body && req.body.doctorNotes) || req.query.doctorNotes || submission.doctorNotes || '';
     
-    // Store doctor notes in submission if provided via POST
     if (req.body && req.body.doctorNotes && req.method === 'POST') {
       submission.doctorNotes = req.body.doctorNotes;
       await submission.save();
@@ -131,53 +128,29 @@ exports.generateReport = async (req, res) => {
 
     const doc = new PDFDocument();
     const reportName = `${Date.now()}-report.pdf`;
-    const reportPath = `uploads/${reportName}`;
-    let s3ReportUrl = '';
+    const reportPath = path.join(__dirname, '..', 'uploads', reportName);
 
-    // Set response headers
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${reportName}`);
 
-    // Create write stream for local file
-    const writeStream = fs.createWriteStream(reportPath);
-    
-    // Handle stream errors
-    writeStream.on('error', (error) => {
-      console.error('Write stream error:', error);
-      if (!res.headersSent) {
-        res.status(500).json({ message: 'PDF generation failed' });
-      }
-    });
-
-    // Pipe to both file and response
-    doc.pipe(writeStream);
     doc.pipe(res);
 
-    // PDF Header (compact)
     doc.fontSize(18).text('DENTAL CARE PRO', { align: 'center' });
-    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId} | Date: ${new Date(submission.createdAt).toLocaleDateString()}`, { align: 'center' });
+    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId}`, { align: 'center' });
     doc.moveDown();
     
-    // Doctor's Assessment (if any)
     if (doctorNotes) {
       doc.fontSize(12).text('ASSESSMENT:', { underline: true });
       doc.fontSize(10).text(doctorNotes);
       doc.moveDown();
     }
 
-    // Only Annotated Image
     if (submission.annotatedImageUrl) {
-      try {
-        const fullPath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
-        
-        if (fs.existsSync(fullPath)) {
-          doc.image(fullPath, 50, doc.y, { width: 500 });
-        } else {
-          doc.text('Please annotate the image first');
-        }
-      } catch (error) {
-        console.error('Image error:', error);
-        doc.text('Image processing error');
+      const imagePath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
+      if (fs.existsSync(imagePath)) {
+        doc.image(imagePath, 50, doc.y, { width: 500 });
+      } else {
+        doc.text('Please annotate the image first');
       }
     } else {
       doc.text('Please annotate the image first');
@@ -185,30 +158,8 @@ exports.generateReport = async (req, res) => {
 
     doc.end();
 
-    // Handle completion and S3 upload
-    writeStream.on('finish', async () => {
-      try {
-        // Update submission with local report path
-        submission.reportUrl = `/${reportPath}`;
-        submission.status = 'reported';
-        
-        // Upload to S3 if configured
-        if (process.env.USE_S3 === 'true' && process.env.AWS_S3_BUCKET) {
-          try {
-            const pdfBuffer = fs.readFileSync(reportPath);
-            const s3Key = `reports/${reportName}`;
-            s3ReportUrl = await uploadPDFToS3(pdfBuffer, s3Key);
-            submission.s3ReportUrl = s3ReportUrl;
-          } catch (s3Error) {
-            console.log('S3 PDF upload failed:', s3Error.message);
-          }
-        }
-        
-        await submission.save();
-      } catch (saveError) {
-        console.error('Error saving submission:', saveError);
-      }
-    });
+    submission.status = 'reported';
+    await submission.save();
 
   } catch (error) {
     console.error('Generate report error:', error);
