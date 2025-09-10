@@ -115,6 +115,11 @@ exports.generateReport = async (req, res) => {
       return res.status(404).json({ message: 'Submission not found' });
     }
 
+    // Check if user has access to this submission
+    if (req.user.role !== 'admin' && submission.patient.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     const doc = new PDFDocument();
     const reportName = `${Date.now()}-report.pdf`;
     const reportPath = `uploads/${reportName}`;
