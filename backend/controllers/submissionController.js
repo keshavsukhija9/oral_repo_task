@@ -109,62 +109,89 @@ exports.saveAnnotation = async (req, res) => {
 };
 
 exports.generateReport = async (req, res) => {
+  console.log('PDF generation started for submission:', req.params.id);
+  
   try {
     const submission = await Submission.findById(req.params.id);
     if (!submission) {
+      console.log('Submission not found');
       return res.status(404).json({ message: 'Submission not found' });
     }
+
+    console.log('Submission found:', submission.name);
 
     if (req.user.role !== 'admin' && submission.patient.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const doctorNotes = (req.body && req.body.doctorNotes) || req.query.doctorNotes || submission.doctorNotes || '';
+    const doctorNotes = (req.body && req.body.doctorNotes) || submission.doctorNotes || '';
+    console.log('Doctor notes:', doctorNotes);
     
-    if (req.body && req.body.doctorNotes && req.method === 'POST') {
+    if (req.body && req.body.doctorNotes) {
       submission.doctorNotes = req.body.doctorNotes;
       await submission.save();
     }
 
-    const doc = new PDFDocument();
-    const reportName = `${Date.now()}-report.pdf`;
-    const reportPath = path.join(__dirname, '..', 'uploads', reportName);
+    console.log('Creating PDF document...');
+    const doc = new PDFDocument({ margin: 50 });
+    const reportName = `report-${submission.patientId}-${Date.now()}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${reportName}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${reportName}"`);
+    res.setHeader('Cache-Control', 'no-cache');
 
     doc.pipe(res);
 
-    doc.fontSize(18).text('DENTAL CARE PRO', { align: 'center' });
-    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId}`, { align: 'center' });
-    doc.moveDown();
+    // PDF Content
+    doc.fontSize(20).text('DENTAL CARE PRO', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).text(`Patient: ${submission.name}`, { align: 'center' });
+    doc.text(`ID: ${submission.patientId}`, { align: 'center' });
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, { align: 'center' });
+    doc.moveDown(1);
     
     if (doctorNotes) {
-      doc.fontSize(12).text('ASSESSMENT:', { underline: true });
-      doc.fontSize(10).text(doctorNotes);
-      doc.moveDown();
+      doc.fontSize(14).text('DOCTOR\'S ASSESSMENT:', { underline: true });
+      doc.fontSize(11).text(doctorNotes, { align: 'justify' });
+      doc.moveDown(1);
     }
 
+    // Handle annotated image
     if (submission.annotatedImageUrl) {
-      const imagePath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
+      console.log('Processing annotated image:', submission.annotatedImageUrl);
+      const imagePath = path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''));
+      console.log('Image path:', imagePath);
+      
       if (fs.existsSync(imagePath)) {
-        doc.image(imagePath, 50, doc.y, { width: 500 });
+        console.log('Image found, adding to PDF');
+        try {
+          const pageWidth = doc.page.width - 100;
+          doc.image(imagePath, 50, doc.y, { width: Math.min(pageWidth, 500) });
+        } catch (imgError) {
+          console.error('Image processing error:', imgError);
+          doc.text('Error loading annotated image');
+        }
       } else {
-        doc.text('Please annotate the image first');
+        console.log('Image not found at path:', imagePath);
+        doc.text('Annotated image not available');
       }
     } else {
-      doc.text('Please annotate the image first');
+      console.log('No annotated image URL');
+      doc.text('No annotated image available');
     }
 
+    console.log('Finalizing PDF...');
     doc.end();
 
+    // Update submission status
     submission.status = 'reported';
     await submission.save();
+    console.log('PDF generation completed successfully');
 
   } catch (error) {
-    console.error('Generate report error:', error);
+    console.error('PDF Generation Error:', error);
     if (!res.headersSent) {
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: `PDF generation failed: ${error.message}` });
     }
   }
 };
