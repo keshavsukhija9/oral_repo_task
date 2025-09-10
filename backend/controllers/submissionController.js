@@ -202,21 +202,27 @@ exports.generateReport = async (req, res) => {
 
     // Images Section
     try {
-      if (submission.imageUrl && fs.existsSync(`.${submission.imageUrl}`)) {
-        doc.addPage();
-        doc.fontSize(18).text('ORIGINAL DENTAL IMAGE', { align: 'center' });
-        doc.moveDown();
-        doc.image(`.${submission.imageUrl}`, { width: 400 });
-        doc.moveDown();
+      if (submission.imageUrl) {
+        const originalImagePath = path.join(__dirname, '..', submission.imageUrl.replace('/', ''));
+        if (fs.existsSync(originalImagePath)) {
+          doc.addPage();
+          doc.fontSize(18).text('ORIGINAL DENTAL IMAGE', { align: 'center' });
+          doc.moveDown();
+          doc.image(originalImagePath, { width: 400 });
+          doc.moveDown();
+        }
       }
 
-      if (submission.annotatedImageUrl && fs.existsSync(`.${submission.annotatedImageUrl}`)) {
-        doc.addPage();
-        doc.fontSize(18).text('ANNOTATED DENTAL IMAGE', { align: 'center' });
-        doc.moveDown();
-        doc.image(`.${submission.annotatedImageUrl}`, { width: 400 });
-        doc.moveDown();
-        doc.fontSize(10).text('Note: Annotations indicate areas of clinical interest.', { align: 'center' });
+      if (submission.annotatedImageUrl) {
+        const annotatedImagePath = path.join(__dirname, '..', submission.annotatedImageUrl.replace('/', ''));
+        if (fs.existsSync(annotatedImagePath)) {
+          doc.addPage();
+          doc.fontSize(18).text('ANNOTATED DENTAL IMAGE', { align: 'center' });
+          doc.moveDown();
+          doc.image(annotatedImagePath, { width: 400 });
+          doc.moveDown();
+          doc.fontSize(10).text('Note: Annotations indicate areas of clinical interest.', { align: 'center' });
+        }
       }
     } catch (imageError) {
       console.error('Image processing error:', imageError);
