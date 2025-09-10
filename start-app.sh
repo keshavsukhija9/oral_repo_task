@@ -1,54 +1,46 @@
 #!/bin/bash
+set -e
 
-echo "🚀 Starting Oral Health App..."
+echo "🚀 Starting DentalCare Pro Application..."
 
-# Check if MongoDB is running
-if ! pgrep -x "mongod" > /dev/null; then
-    echo "📦 Starting MongoDB..."
-    nohup mongod --dbpath /tmp/mongodb --port 27017 > /dev/null 2>&1 &
-    sleep 3
-fi
+# Kill existing processes
+pkill -f "npm run dev" 2>/dev/null || true
+pkill -f "npm start" 2>/dev/null || true
+sleep 2
 
-echo "✅ MongoDB is running"
-
-# Start backend in background
-echo "🔧 Starting backend server..."
+# Start backend
+echo "📦 Starting backend server..."
 cd backend
-nohup npm run dev > backend.log 2>&1 &
+npm run dev > backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
 # Wait for backend to start
 sleep 5
 
+# Create test users
+echo "👥 Creating test users..."
+cd backend
+npm run setup-test-users
+cd ..
+
 # Start frontend
 echo "🎨 Starting frontend server..."
 cd frontend
-npm start &
+npm start > frontend.log 2>&1 &
 FRONTEND_PID=$!
 cd ..
 
-echo "🎉 Application started!"
+echo "✅ Application started successfully!"
 echo "📱 Frontend: http://localhost:3000"
 echo "🔧 Backend: http://localhost:5001"
 echo ""
-echo "Test credentials:"
-echo "👤 Patient: patient@example.com / patient123"
-echo "👨‍⚕️ Admin: admin@example.com / admin123"
+echo "🔑 Test Credentials:"
+echo "Admin: admin@example.com / admin123"
+echo "Patient: patient@example.com / patient123"
 echo ""
-echo "Press Ctrl+C to stop all services"
+echo "Press Ctrl+C to stop all servers"
 
-# Function to cleanup on exit
-cleanup() {
-    echo "🛑 Stopping services..."
-    kill $BACKEND_PID 2>/dev/null
-    kill $FRONTEND_PID 2>/dev/null
-    pkill -f "npm run dev" 2>/dev/null
-    pkill -f "react-scripts start" 2>/dev/null
-    exit 0
-}
-
-trap cleanup INT
-
-# Wait for user to stop
+# Wait for user interrupt
+trap "echo 'Stopping servers...'; kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT
 wait

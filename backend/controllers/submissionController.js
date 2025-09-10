@@ -72,6 +72,9 @@ exports.saveAnnotation = async (req, res) => {
     const subId = req.params.id;
     const { annotatedDataUrl, annotationJSON } = req.body;
 
+    console.log('Saving annotation for submission:', subId);
+    console.log('Request body keys:', Object.keys(req.body));
+
     if (!annotatedDataUrl) {
       return res.status(400).json({ message: 'annotatedDataUrl missing' });
     }
@@ -88,12 +91,15 @@ exports.saveAnnotation = async (req, res) => {
     if (!buffer.length) throw new Error('Empty annotation buffer');
 
     const uploadsDir = path.join(__dirname, '..', 'uploads');
-    await fs.promises.mkdir(uploadsDir, { recursive: true });
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    
     const filename = `${Date.now()}-annotated.png`;
     const filepath = path.join(uploadsDir, filename);
 
-    await fs.promises.writeFile(filepath, buffer);
-    const stats = await fs.promises.stat(filepath);
+    fs.writeFileSync(filepath, buffer);
+    const stats = fs.statSync(filepath);
     if (stats.size === 0) throw new Error('Annotated PNG saved with 0 bytes');
 
     submission.annotatedImageUrl = `/uploads/${filename}`;
@@ -101,8 +107,9 @@ exports.saveAnnotation = async (req, res) => {
     submission.status = 'annotated';
     await submission.save();
 
+    console.log('Annotation saved successfully:', filename);
     res.json({
-      message: 'Annotation saved',
+      message: 'Annotation saved successfully',
       annotatedImage: submission.annotatedImageUrl
     });
   } catch (err) {
