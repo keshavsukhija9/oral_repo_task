@@ -109,6 +109,7 @@ exports.saveAnnotation = async (req, res) => {
 };
 
 exports.generateReport = async (req, res) => {
+  let doc;
   try {
     const submission = await Submission.findById(req.params.id);
     if (!submission) {
@@ -126,56 +127,51 @@ exports.generateReport = async (req, res) => {
       await submission.save();
     }
 
-    // Create PDF
-    const doc = new PDFDocument();
-    const reportName = `dental-report-${Date.now()}.pdf`;
+    doc = new PDFDocument({ margin: 50 });
+    const reportName = `report-${Date.now()}.pdf`;
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${reportName}`);
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${reportName}"`,
+      'Cache-Control': 'no-cache'
+    });
 
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(18).text('DENTAL CARE PRO', { align: 'center' });
-    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId}`, { align: 'center' });
+    doc.fontSize(20).text('DENTAL CARE PRO', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(12).text(`Patient: ${submission.name}`);
+    doc.text(`ID: ${submission.patientId}`);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`);
     doc.moveDown();
     
-    // Doctor Notes
     if (doctorNotes) {
-      doc.fontSize(12).text('ASSESSMENT:', { underline: true });
-      doc.fontSize(10).text(doctorNotes);
+      doc.fontSize(14).text('ASSESSMENT:', { underline: true });
+      doc.fontSize(11).text(doctorNotes);
       doc.moveDown();
     }
 
-    // GUARANTEED Annotated Image Inclusion
     if (submission.annotatedImageUrl) {
-      const cleanPath = submission.annotatedImageUrl.startsWith('/') 
-        ? submission.annotatedImageUrl.slice(1) 
-        : submission.annotatedImageUrl;
-      const imagePath = path.resolve(__dirname, '..', cleanPath);
-      
+      const imagePath = path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''));
       if (fs.existsSync(imagePath)) {
-        doc.image(imagePath, {
-          fit: [500, 400],
-          align: 'center',
-          valign: 'center'
-        });
+        doc.image(imagePath, 50, doc.y, { width: 500 });
       } else {
-        doc.text('Annotated image file not found');
+        doc.text('Please save annotation first');
       }
     } else {
-      doc.text('No annotated image available - please annotate first');
+      doc.text('Please create annotation first');
     }
 
     doc.end();
-
+    
     submission.status = 'reported';
     await submission.save();
 
   } catch (error) {
-    console.error('PDF Error:', error);
+    console.error('PDF generation error:', error);
+    if (doc) doc.end();
     if (!res.headersSent) {
-      res.status(500).json({ message: error.message });
+      res.status(500).json({ message: 'PDF generation failed' });
     }
   }
 };
