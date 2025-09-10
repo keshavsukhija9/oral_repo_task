@@ -15,14 +15,15 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Uploads
-/backend/uploads/*
-!backend/uploads/.gitkeep
+# Database
+*.db
+*.sqlite
 
 # Logs
+logs
 *.log
-logs/
-backend/backend.log
+backend.log
+server.log
 
 # Runtime data
 pids
@@ -32,6 +33,24 @@ pids
 
 # Coverage directory used by tools like istanbul
 coverage/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
 
 # IDE files
 .vscode/
@@ -49,9 +68,9 @@ coverage/
 ehthumbs.db
 Thumbs.db
 
-# AWS
-.aws/
+# Uploads (keep structure but ignore files)
+/backend/uploads/*
+!/backend/uploads/.gitkeep
 
-# Temporary files
-tmp/
-temp/
+# Test files
+test-backend.js

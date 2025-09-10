@@ -1,11 +1,12 @@
 #!/bin/bash
+set -e  # Exit on any error
 
 echo "🚀 Setting up AWS S3 integration for Oral Health App..."
 
 # Install backend dependencies
 echo "📦 Installing backend dependencies..."
-cd backend
-npm install aws-sdk multer-s3
+cd backend || { echo "❌ Error: backend directory not found"; exit 1; }
+npm install aws-sdk multer-s3 || { echo "❌ Error: Failed to install dependencies"; exit 1; }
 
 echo "✅ Backend dependencies installed!"
 

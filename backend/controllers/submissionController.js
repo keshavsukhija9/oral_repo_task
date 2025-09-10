@@ -1,8 +1,8 @@
-const Submission = require('../models/Submission');
 const fs = require('fs');
-const PDFDocument = require('pdfkit');
-const { uploadToS3, uploadPDFToS3 } = require('../config/s3');
 const path = require('path');
+const PDFDocument = require('pdfkit');
+const Submission = require('../models/Submission');
+const { uploadToS3, uploadPDFToS3 } = require('../config/s3');
 
 exports.createSubmission = async (req, res) => {
   const { name, patientId, email, note } = req.body;
@@ -120,79 +120,141 @@ exports.generateReport = async (req, res) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Accept doctor's notes from POST body, query params, or existing saved notes
+    const doctorNotes = (req.body && req.body.doctorNotes) || req.query.doctorNotes || submission.doctorNotes || '';
+    
+    // Store doctor notes in submission if provided via POST
+    if (req.body && req.body.doctorNotes && req.method === 'POST') {
+      submission.doctorNotes = req.body.doctorNotes;
+      await submission.save();
+    }
+
     const doc = new PDFDocument();
     const reportName = `${Date.now()}-report.pdf`;
     const reportPath = `uploads/${reportName}`;
     let s3ReportUrl = '';
 
+    // Set response headers
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${reportName}`);
 
+    // Create write stream for local file
     const writeStream = fs.createWriteStream(reportPath);
-    doc.pipe(writeStream);
-    doc.pipe(res);
-
-    // PDF Content
-    doc.fontSize(25).text('Dental Care Pro - Patient Report', { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(16).text(`Name: ${submission.name}`);
-    doc.text(`Patient ID: ${submission.patientId}`);
-    doc.text(`Email: ${submission.email}`);
-    doc.text(`Date: ${submission.createdAt.toDateString()}`);
-    doc.moveDown();
-    doc.text(`Note: ${submission.note || 'No additional notes'}`);
-    doc.moveDown();
-
-    // Add S3 links if available
-    if (submission.s3ImageUrl) {
-      doc.fontSize(14).text('Original Image URL:', { continued: false });
-      doc.fontSize(10).fillColor('blue').text(submission.s3ImageUrl, { link: submission.s3ImageUrl });
-      doc.fillColor('black').moveDown();
-    }
-
-    if (submission.s3AnnotatedUrl) {
-      doc.fontSize(14).text('Annotated Image URL:', { continued: false });
-      doc.fontSize(10).fillColor('blue').text(submission.s3AnnotatedUrl, { link: submission.s3AnnotatedUrl });
-      doc.fillColor('black').moveDown();
-    }
-
-    // Add images
-    if (submission.imageUrl && fs.existsSync(`.${submission.imageUrl}`)) {
-      doc.addPage();
-      doc.fontSize(20).text('Original Image');
-      doc.image(`.${submission.imageUrl}`, { width: 400 });
-      doc.moveDown();
-    }
-
-    if (submission.annotatedImageUrl && fs.existsSync(`.${submission.annotatedImageUrl}`)) {
-      doc.addPage();
-      doc.fontSize(20).text('Annotated Image');
-      doc.image(`.${submission.annotatedImageUrl}`, { width: 400 });
-    }
-
-    doc.end();
-
-    // Wait for PDF to be written, then upload to S3
-    writeStream.on('finish', async () => {
-      if (process.env.USE_S3 === 'true' && process.env.AWS_S3_BUCKET) {
-        try {
-          const pdfBuffer = fs.readFileSync(reportPath);
-          const s3Key = `reports/${reportName}`;
-          s3ReportUrl = await uploadPDFToS3(pdfBuffer, s3Key);
-          
-          submission.s3ReportUrl = s3ReportUrl;
-          await submission.save();
-        } catch (s3Error) {
-          console.log('S3 PDF upload failed:', s3Error.message);
-        }
+    
+    // Handle stream errors
+    writeStream.on('error', (error) => {
+      console.error('Write stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'PDF generation failed' });
       }
     });
 
-    submission.reportUrl = `/${reportPath}`;
-    submission.status = 'reported';
-    await submission.save();
+    // Pipe to both file and response
+    doc.pipe(writeStream);
+    doc.pipe(res);
+
+    // Professional PDF Header
+    doc.fillColor('#2563eb').fontSize(24).text('DENTAL CARE PRO', { align: 'center' });
+    doc.fillColor('#000000').fontSize(14).text('Professional Dental Report', { align: 'center' });
+    doc.moveDown(2);
+    
+    // Patient Information Section
+    doc.fontSize(16).text('PATIENT INFORMATION', { underline: true });
+    doc.moveDown();
+    
+    doc.fontSize(12);
+    doc.text(`Patient Name: ${submission.name}`);
+    doc.text(`Patient ID: ${submission.patientId}`);
+    doc.text(`Email: ${submission.email}`);
+    doc.text(`Date: ${new Date(submission.createdAt).toLocaleDateString()}`);
+    doc.moveDown();
+    
+    // Patient Notes Section
+    if (submission.note) {
+      doc.fontSize(14).text('PATIENT NOTES', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).text(submission.note);
+      doc.moveDown();
+    }
+    
+    // Doctor's Assessment Section
+    if (doctorNotes) {
+      doc.fontSize(14).text('DOCTOR\'S ASSESSMENT & RECOMMENDATIONS', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(11).text(doctorNotes);
+      doc.moveDown();
+    }
+
+    // Digital Links Section (if S3 available)
+    if (submission.s3ImageUrl || submission.s3AnnotatedUrl) {
+      doc.fontSize(14).text('DIGITAL RESOURCES', { underline: true });
+      doc.moveDown(0.5);
+      
+      if (submission.s3ImageUrl) {
+        doc.fontSize(10).text(`Original Image: ${submission.s3ImageUrl}`);
+      }
+      
+      if (submission.s3AnnotatedUrl) {
+        doc.fontSize(10).text(`Annotated Image: ${submission.s3AnnotatedUrl}`);
+      }
+      doc.moveDown();
+    }
+
+    // Images Section
+    try {
+      if (submission.imageUrl && fs.existsSync(`.${submission.imageUrl}`)) {
+        doc.addPage();
+        doc.fontSize(18).text('ORIGINAL DENTAL IMAGE', { align: 'center' });
+        doc.moveDown();
+        doc.image(`.${submission.imageUrl}`, { width: 400 });
+        doc.moveDown();
+      }
+
+      if (submission.annotatedImageUrl && fs.existsSync(`.${submission.annotatedImageUrl}`)) {
+        doc.addPage();
+        doc.fontSize(18).text('ANNOTATED DENTAL IMAGE', { align: 'center' });
+        doc.moveDown();
+        doc.image(`.${submission.annotatedImageUrl}`, { width: 400 });
+        doc.moveDown();
+        doc.fontSize(10).text('Note: Annotations indicate areas of clinical interest.', { align: 'center' });
+      }
+    } catch (imageError) {
+      console.error('Image processing error:', imageError);
+      doc.fontSize(12).text('Error loading dental images', { align: 'center' });
+    }
+
+    // End the document
+    doc.end();
+
+    // Handle completion and S3 upload
+    writeStream.on('finish', async () => {
+      try {
+        // Update submission with local report path
+        submission.reportUrl = `/${reportPath}`;
+        submission.status = 'reported';
+        
+        // Upload to S3 if configured
+        if (process.env.USE_S3 === 'true' && process.env.AWS_S3_BUCKET) {
+          try {
+            const pdfBuffer = fs.readFileSync(reportPath);
+            const s3Key = `reports/${reportName}`;
+            s3ReportUrl = await uploadPDFToS3(pdfBuffer, s3Key);
+            submission.s3ReportUrl = s3ReportUrl;
+          } catch (s3Error) {
+            console.log('S3 PDF upload failed:', s3Error.message);
+          }
+        }
+        
+        await submission.save();
+      } catch (saveError) {
+        console.error('Error saving submission:', saveError);
+      }
+    });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Generate report error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
   }
 };

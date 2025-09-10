@@ -1,5 +1,8 @@
 const express = require('express');
+const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
+const User = require('../models/User');
 const {
   createSubmission,
   getSubmissions,
@@ -8,7 +11,6 @@ const {
   generateReport,
 } = require('../controllers/submissionController');
 const { protect, admin } = require('../middleware/authMiddleware');
-const multer = require('multer');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -24,7 +26,6 @@ const upload = multer({ storage });
 router.route('/').post(protect, upload.single('image'), createSubmission).get(protect, getSubmissions);
 router.route('/:id').get(protect, getSubmissionById);
 router.route('/:id/annotate').post(protect, admin, saveAnnotation);
-router.route('/:id/report').get(generateReportWithToken);
 
 const generateReportWithToken = async (req, res) => {
   try {
@@ -33,9 +34,7 @@ const generateReportWithToken = async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const jwt = require('jsonwebtoken');
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const User = require('../models/User');
     const user = await User.findById(decoded.id);
     
     if (!user) {
@@ -48,5 +47,7 @@ const generateReportWithToken = async (req, res) => {
     return res.status(401).json({ message: 'Invalid token' });
   }
 };
+
+router.route('/:id/report').get(generateReportWithToken).post(protect, admin, generateReport);
 
 module.exports = router;

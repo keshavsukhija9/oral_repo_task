@@ -38,6 +38,9 @@ const SubmissionSchema = new mongoose.Schema({
   annotation: {
     type: String, // JSON string of annotations
   },
+  doctorNotes: {
+    type: String,
+  },
   reportUrl: {
     type: String,
   },

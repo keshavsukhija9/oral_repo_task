@@ -1,12 +1,23 @@
-const AWS = require('aws-sdk');
+let AWS, s3;
 
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  region: process.env.AWS_REGION || 'us-east-1'
-});
+try {
+  AWS = require('aws-sdk');
+  s3 = new AWS.S3({
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.AWS_REGION || 'us-east-1'
+  });
+} catch (error) {
+  console.log('AWS SDK not available. S3 features disabled.');
+  AWS = null;
+  s3 = null;
+}
 
 const uploadToS3 = async (file, key) => {
+  if (!s3) {
+    throw new Error('S3 not configured');
+  }
+  
   const params = {
     Bucket: process.env.AWS_S3_BUCKET,
     Key: key,
@@ -25,6 +36,10 @@ const uploadToS3 = async (file, key) => {
 };
 
 const uploadPDFToS3 = async (file, key) => {
+  if (!s3) {
+    throw new Error('S3 not configured');
+  }
+  
   const params = {
     Bucket: process.env.AWS_S3_BUCKET,
     Key: key,
