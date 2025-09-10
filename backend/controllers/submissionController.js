@@ -153,83 +153,31 @@ exports.generateReport = async (req, res) => {
     doc.pipe(writeStream);
     doc.pipe(res);
 
-    // Professional PDF Header
-    doc.fillColor('#2563eb').fontSize(24).text('DENTAL CARE PRO', { align: 'center' });
-    doc.fillColor('#000000').fontSize(14).text('Professional Dental Report', { align: 'center' });
-    doc.moveDown(2);
-    
-    // Patient Information Section
-    doc.fontSize(16).text('PATIENT INFORMATION', { underline: true });
+    // PDF Header (compact)
+    doc.fontSize(18).text('DENTAL CARE PRO', { align: 'center' });
+    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId} | Date: ${new Date(submission.createdAt).toLocaleDateString()}`, { align: 'center' });
     doc.moveDown();
     
-    doc.fontSize(12);
-    doc.text(`Patient Name: ${submission.name}`);
-    doc.text(`Patient ID: ${submission.patientId}`);
-    doc.text(`Email: ${submission.email}`);
-    doc.text(`Date: ${new Date(submission.createdAt).toLocaleDateString()}`);
-    doc.moveDown();
-    
-    // Patient Notes Section
-    if (submission.note) {
-      doc.fontSize(14).text('PATIENT NOTES', { underline: true });
-      doc.moveDown(0.5);
-      doc.fontSize(11).text(submission.note);
-      doc.moveDown();
-    }
-    
-    // Doctor's Assessment Section
+    // Doctor's Assessment (if any)
     if (doctorNotes) {
-      doc.fontSize(14).text('DOCTOR\'S ASSESSMENT & RECOMMENDATIONS', { underline: true });
-      doc.moveDown(0.5);
-      doc.fontSize(11).text(doctorNotes);
+      doc.fontSize(12).text('ASSESSMENT:', { underline: true });
+      doc.fontSize(10).text(doctorNotes);
       doc.moveDown();
     }
 
-    // Digital Links Section (if S3 available)
-    if (submission.s3ImageUrl || submission.s3AnnotatedUrl) {
-      doc.fontSize(14).text('DIGITAL RESOURCES', { underline: true });
-      doc.moveDown(0.5);
-      
-      if (submission.s3ImageUrl) {
-        doc.fontSize(10).text(`Original Image: ${submission.s3ImageUrl}`);
-      }
-      
-      if (submission.s3AnnotatedUrl) {
-        doc.fontSize(10).text(`Annotated Image: ${submission.s3AnnotatedUrl}`);
-      }
-      doc.moveDown();
-    }
-
-    // Images Section
+    // Only Annotated Image
     try {
-      if (submission.imageUrl) {
-        const originalImagePath = path.join(__dirname, '..', submission.imageUrl.replace('/', ''));
-        if (fs.existsSync(originalImagePath)) {
-          doc.addPage();
-          doc.fontSize(18).text('ORIGINAL DENTAL IMAGE', { align: 'center' });
-          doc.moveDown();
-          doc.image(originalImagePath, { width: 400 });
-          doc.moveDown();
-        }
-      }
-
       if (submission.annotatedImageUrl) {
         const annotatedImagePath = path.join(__dirname, '..', submission.annotatedImageUrl.replace('/', ''));
         if (fs.existsSync(annotatedImagePath)) {
-          doc.addPage();
-          doc.fontSize(18).text('ANNOTATED DENTAL IMAGE', { align: 'center' });
-          doc.moveDown();
-          doc.image(annotatedImagePath, { width: 400 });
-          doc.moveDown();
-          doc.fontSize(10).text('Note: Annotations indicate areas of clinical interest.', { align: 'center' });
+          doc.image(annotatedImagePath, { width: 500, align: 'center' });
         }
       }
     } catch (imageError) {
       console.error('Image processing error:', imageError);
-      doc.fontSize(12).text('Error loading dental images', { align: 'center' });
+      doc.text('Error loading annotated image');
     }
 
-    // End the document
     doc.end();
 
     // Handle completion and S3 upload
