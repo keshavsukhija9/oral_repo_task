@@ -111,12 +111,9 @@ exports.saveAnnotation = async (req, res) => {
   }
 };
 
-const { once } = require('events');
-
 exports.generateReport = async (req, res) => {
   try {
-    const id = req.params.id;
-    const submission = await Submission.findById(id);
+    const submission = await Submission.findById(req.params.id);
     if (!submission) return res.status(404).json({ message: 'Submission not found' });
 
     const doctorNotes = (req.body && req.body.doctorNotes) || submission.doctorNotes || '';
@@ -126,63 +123,45 @@ exports.generateReport = async (req, res) => {
       await submission.save();
     }
 
-    const uploadsDir = path.join(__dirname, '..', 'uploads');
-    await fs.promises.mkdir(uploadsDir, { recursive: true });
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const reportName = `report-${Date.now()}.pdf`;
 
-    const pdfFilename = `${Date.now()}-report.pdf`;
-    const pdfPath = path.join(uploadsDir, pdfFilename);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${reportName}"`);
+    doc.pipe(res);
 
-    const doc = new PDFDocument({ autoFirstPage: true, size: 'A4' });
-    const writeStream = fs.createWriteStream(pdfPath);
-    doc.pipe(writeStream);
-
-    // --- Report Content ---
-    doc.fontSize(18).text('Dental Report', { align: 'center' }).moveDown();
-    doc.fontSize(12).text(`Name: ${submission.name}`);
-    doc.text(`Patient ID: ${submission.patientId}`);
-    doc.text(`Email: ${submission.email}`);
-    doc.text(`Uploaded: ${submission.createdAt?.toLocaleString()}`);
-    doc.moveDown().text('Notes:');
-    doc.fontSize(10).text(submission.note || 'N/A', { width: 450 });
-    doc.moveDown();
-
+    // SINGLE PAGE LAYOUT
+    doc.fontSize(16).text('DENTAL CARE PRO', { align: 'center' });
+    doc.fontSize(10).text(`Patient: ${submission.name} | ID: ${submission.patientId}`, { align: 'center' });
+    doc.moveDown(0.5);
+    
     if (doctorNotes) {
-      doc.fontSize(12).text('Doctor Assessment:', { underline: true });
-      doc.fontSize(10).text(doctorNotes, { width: 450 });
-      doc.moveDown();
+      doc.fontSize(12).text('Assessment:', { underline: true });
+      doc.fontSize(9).text(doctorNotes, { width: 500 });
+      doc.moveDown(0.5);
     }
 
-    // Insert image
-    const imgPath = submission.annotatedImageUrl
-      ? path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''))
-      : (submission.imageUrl ? path.join(__dirname, '..', submission.imageUrl.replace(/^\//, '')) : null);
-
-    if (imgPath && fs.existsSync(imgPath) && fs.statSync(imgPath).size > 0) {
-      doc.addPage().fontSize(14).text('Image', { align: 'left' });
-      doc.image(imgPath, { fit: [500, 500], align: 'center', valign: 'center' });
+    // ANNOTATED IMAGE ON SAME PAGE
+    if (submission.annotatedImageUrl) {
+      const imgPath = path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''));
+      if (fs.existsSync(imgPath)) {
+        doc.image(imgPath, 50, doc.y, { width: 500, height: 400 });
+      } else {
+        doc.text('Please save annotation first');
+      }
     } else {
-      doc.moveDown().text('No image available');
+      doc.text('Please create annotation first');
     }
 
-    doc.addPage().fontSize(12).text('End of Report');
     doc.end();
-
-    await once(writeStream, 'finish');
-
-    // Verify non-empty
-    const stats = await fs.promises.stat(pdfPath);
-    if (stats.size === 0) throw new Error('Generated PDF is empty');
-
-    submission.reportUrl = `/uploads/${pdfFilename}`;
+    
     submission.status = 'reported';
     await submission.save();
 
-    res.json({
-      message: 'Report generated',
-      reportUrl: submission.reportUrl
-    });
-  } catch (err) {
-    console.error('generateReport error:', err);
-    res.status(500).json({ message: err.message });
+  } catch (error) {
+    console.error('PDF error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
   }
 };
