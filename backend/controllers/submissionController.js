@@ -68,57 +68,56 @@ exports.getSubmissionById = async (req, res) => {
 };
 
 exports.saveAnnotation = async (req, res) => {
-  const { annotation, annotatedImage } = req.body;
-  const submissionId = req.params.id;
-
   try {
-    const submission = await Submission.findById(submissionId);
-    if (!submission) {
-      return res.status(404).json({ message: 'Submission not found' });
+    const subId = req.params.id;
+    const { annotatedDataUrl, annotationJSON } = req.body;
+
+    if (!annotatedDataUrl) {
+      return res.status(400).json({ message: 'annotatedDataUrl missing' });
     }
 
-    const base64Data = annotatedImage.replace(/^data:image\/png;base64,/, '');
-    const annotatedImageName = `${Date.now()}-annotated.png`;
-    const annotatedImagePath = path.join(__dirname, '..', 'uploads', annotatedImageName);
-    let s3AnnotatedUrl = '';
+    const submission = await Submission.findById(subId);
+    if (!submission) return res.status(404).json({ message: 'Submission not found' });
 
-    // Save locally with absolute path
-    fs.writeFileSync(annotatedImagePath, base64Data, 'base64');
+    // strip prefix if present
+    let base64 = annotatedDataUrl;
+    const match = annotatedDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+    if (match) base64 = match[1];
 
-    // Upload to S3 if configured
-    if (process.env.USE_S3 === 'true' && process.env.AWS_S3_BUCKET) {
-      try {
-        const imageBuffer = Buffer.from(base64Data, 'base64');
-        const s3Key = `annotated-images/${annotatedImageName}`;
-        s3AnnotatedUrl = await uploadToS3(imageBuffer, s3Key);
-      } catch (s3Error) {
-        console.log('S3 annotated image upload failed:', s3Error.message);
-      }
-    }
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length) throw new Error('Empty annotation buffer');
 
-    submission.annotation = annotation;
-    submission.annotatedImageUrl = `/uploads/${annotatedImageName}`;
-    submission.s3AnnotatedUrl = s3AnnotatedUrl;
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
+    const filename = `${Date.now()}-annotated.png`;
+    const filepath = path.join(uploadsDir, filename);
+
+    await fs.promises.writeFile(filepath, buffer);
+    const stats = await fs.promises.stat(filepath);
+    if (stats.size === 0) throw new Error('Annotated PNG saved with 0 bytes');
+
+    submission.annotatedImageUrl = `/uploads/${filename}`;
+    if (annotationJSON) submission.annotation = annotationJSON;
     submission.status = 'annotated';
+    await submission.save();
 
-    const updatedSubmission = await submission.save();
-    res.json(updatedSubmission);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.json({
+      message: 'Annotation saved',
+      annotatedImage: submission.annotatedImageUrl
+    });
+  } catch (err) {
+    console.error('saveAnnotation error:', err);
+    res.status(500).json({ message: err.message });
   }
 };
 
-exports.generateReport = async (req, res) => {
-  let doc;
-  try {
-    const submission = await Submission.findById(req.params.id);
-    if (!submission) {
-      return res.status(404).json({ message: 'Submission not found' });
-    }
+const { once } = require('events');
 
-    if (req.user.role !== 'admin' && submission.patient.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+exports.generateReport = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const submission = await Submission.findById(id);
+    if (!submission) return res.status(404).json({ message: 'Submission not found' });
 
     const doctorNotes = (req.body && req.body.doctorNotes) || submission.doctorNotes || '';
     
@@ -127,51 +126,63 @@ exports.generateReport = async (req, res) => {
       await submission.save();
     }
 
-    doc = new PDFDocument({ margin: 50 });
-    const reportName = `report-${Date.now()}.pdf`;
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    await fs.promises.mkdir(uploadsDir, { recursive: true });
 
-    res.writeHead(200, {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${reportName}"`,
-      'Cache-Control': 'no-cache'
-    });
+    const pdfFilename = `${Date.now()}-report.pdf`;
+    const pdfPath = path.join(uploadsDir, pdfFilename);
 
-    doc.pipe(res);
+    const doc = new PDFDocument({ autoFirstPage: true, size: 'A4' });
+    const writeStream = fs.createWriteStream(pdfPath);
+    doc.pipe(writeStream);
 
-    doc.fontSize(20).text('DENTAL CARE PRO', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`Patient: ${submission.name}`);
-    doc.text(`ID: ${submission.patientId}`);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`);
+    // --- Report Content ---
+    doc.fontSize(18).text('Dental Report', { align: 'center' }).moveDown();
+    doc.fontSize(12).text(`Name: ${submission.name}`);
+    doc.text(`Patient ID: ${submission.patientId}`);
+    doc.text(`Email: ${submission.email}`);
+    doc.text(`Uploaded: ${submission.createdAt?.toLocaleString()}`);
+    doc.moveDown().text('Notes:');
+    doc.fontSize(10).text(submission.note || 'N/A', { width: 450 });
     doc.moveDown();
-    
+
     if (doctorNotes) {
-      doc.fontSize(14).text('ASSESSMENT:', { underline: true });
-      doc.fontSize(11).text(doctorNotes);
+      doc.fontSize(12).text('Doctor Assessment:', { underline: true });
+      doc.fontSize(10).text(doctorNotes, { width: 450 });
       doc.moveDown();
     }
 
-    if (submission.annotatedImageUrl) {
-      const imagePath = path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''));
-      if (fs.existsSync(imagePath)) {
-        doc.image(imagePath, 50, doc.y, { width: 500 });
-      } else {
-        doc.text('Please save annotation first');
-      }
+    // Insert image
+    const imgPath = submission.annotatedImageUrl
+      ? path.join(__dirname, '..', submission.annotatedImageUrl.replace(/^\//, ''))
+      : (submission.imageUrl ? path.join(__dirname, '..', submission.imageUrl.replace(/^\//, '')) : null);
+
+    if (imgPath && fs.existsSync(imgPath) && fs.statSync(imgPath).size > 0) {
+      doc.addPage().fontSize(14).text('Image', { align: 'left' });
+      doc.image(imgPath, { fit: [500, 500], align: 'center', valign: 'center' });
     } else {
-      doc.text('Please create annotation first');
+      doc.moveDown().text('No image available');
     }
 
+    doc.addPage().fontSize(12).text('End of Report');
     doc.end();
-    
+
+    await once(writeStream, 'finish');
+
+    // Verify non-empty
+    const stats = await fs.promises.stat(pdfPath);
+    if (stats.size === 0) throw new Error('Generated PDF is empty');
+
+    submission.reportUrl = `/uploads/${pdfFilename}`;
     submission.status = 'reported';
     await submission.save();
 
-  } catch (error) {
-    console.error('PDF generation error:', error);
-    if (doc) doc.end();
-    if (!res.headersSent) {
-      res.status(500).json({ message: 'PDF generation failed' });
-    }
+    res.json({
+      message: 'Report generated',
+      reportUrl: submission.reportUrl
+    });
+  } catch (err) {
+    console.error('generateReport error:', err);
+    res.status(500).json({ message: err.message });
   }
 };
