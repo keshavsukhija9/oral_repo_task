@@ -167,12 +167,17 @@ exports.generateReport = async (req, res) => {
 
     // Only Annotated Image
     if (submission.annotatedImageUrl) {
-      const fullPath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
-      
-      if (fs.existsSync(fullPath)) {
-        doc.image(fullPath, 50, doc.y, { width: 500 });
-      } else {
-        doc.text('Please annotate the image first');
+      try {
+        const fullPath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
+        
+        if (fs.existsSync(fullPath)) {
+          doc.image(fullPath, 50, doc.y, { width: 500 });
+        } else {
+          doc.text('Please annotate the image first');
+        }
+      } catch (error) {
+        console.error('Image error:', error);
+        doc.text('Image processing error');
       }
     } else {
       doc.text('Please annotate the image first');
