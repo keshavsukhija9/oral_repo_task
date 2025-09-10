@@ -79,10 +79,10 @@ exports.saveAnnotation = async (req, res) => {
 
     const base64Data = annotatedImage.replace(/^data:image\/png;base64,/, '');
     const annotatedImageName = `${Date.now()}-annotated.png`;
-    const annotatedImagePath = `uploads/${annotatedImageName}`;
+    const annotatedImagePath = path.join(__dirname, '..', 'uploads', annotatedImageName);
     let s3AnnotatedUrl = '';
 
-    // Save locally
+    // Save locally with absolute path
     fs.writeFileSync(annotatedImagePath, base64Data, 'base64');
 
     // Upload to S3 if configured
@@ -97,7 +97,7 @@ exports.saveAnnotation = async (req, res) => {
     }
 
     submission.annotation = annotation;
-    submission.annotatedImageUrl = `/${annotatedImagePath}`;
+    submission.annotatedImageUrl = `/uploads/${annotatedImageName}`;
     submission.s3AnnotatedUrl = s3AnnotatedUrl;
     submission.status = 'annotated';
 
@@ -167,17 +167,10 @@ exports.generateReport = async (req, res) => {
 
     // Only Annotated Image
     if (submission.annotatedImageUrl) {
-      const imagePath = submission.annotatedImageUrl.startsWith('/') 
-        ? submission.annotatedImageUrl.substring(1) 
-        : submission.annotatedImageUrl;
-      const fullPath = path.resolve(__dirname, '..', imagePath);
+      const fullPath = path.join(__dirname, '..', submission.annotatedImageUrl.substring(1));
       
       if (fs.existsSync(fullPath)) {
-        try {
-          doc.image(fullPath, 50, doc.y, { width: 500 });
-        } catch (imgError) {
-          doc.text('Image format not supported');
-        }
+        doc.image(fullPath, 50, doc.y, { width: 500 });
       } else {
         doc.text('Please annotate the image first');
       }
