@@ -1,170 +1,81 @@
-# Deployment Guide
+# 🚀 Deployment Guide
 
-## 🚀 Quick Deploy Options
+## Production Deployment Checklist
 
-### Option 1: Vercel + Railway (Recommended)
-
-#### Frontend (Vercel)
+### 1. Environment Setup
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy frontend
-cd frontend
-vercel --prod
-```
-
-#### Backend (Railway)
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Deploy backend
-cd backend
-railway login
-railway init
-railway up
-```
-
-### Option 2: Netlify + Heroku
-
-#### Frontend (Netlify)
-```bash
-# Build frontend
-cd frontend
-npm run build
-
-# Deploy to Netlify (drag & drop build folder)
-```
-
-#### Backend (Heroku)
-```bash
-# Install Heroku CLI
-cd backend
-heroku create your-app-name
-git push heroku main
-```
-
-### Option 3: Local Development
-
-#### Prerequisites
-- Node.js (v14+)
-- MongoDB (local or Atlas)
-- Git
-
-#### Setup
-```bash
-# Clone repository
-git clone <your-repo-url>
-cd oral-health-app
-
-# Backend setup
-cd backend
-npm install
-npm run setup-test-users
-npm run dev
-
-# Frontend setup (new terminal)
-cd frontend
-npm install
-npm start
-```
-
-## 🌐 Environment Variables
-
-### Backend (.env)
-```bash
-JWT_SECRET=your_jwt_secret_key
-MONGO_URI=mongodb://localhost:27017/oral-health-app
+# Backend .env
+NODE_ENV=production
+JWT_SECRET=your_strong_production_secret_here
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/oral-health-prod
 PORT=5001
 
-# AWS S3 (Optional)
+# Optional AWS S3
 AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=us-east-1
-AWS_S3_BUCKET=your-bucket-name
+AWS_S3_BUCKET=your-production-bucket
 USE_S3=true
 ```
 
-### Frontend (.env)
-```bash
-REACT_APP_API_URL=http://localhost:5001/api
-```
+### 2. Database Setup
+- Create production MongoDB database
+- Run `npm run setup-test-users` for initial admin account
+- Configure database backups
 
-## 📦 Production Build
+### 3. Security Configuration
+- Enable HTTPS/SSL certificates
+- Configure CORS for production domains
+- Set up firewall rules
+- Enable MongoDB authentication
 
-### Frontend
+### 4. Deployment Options
+
+#### Option A: Traditional Server (PM2)
 ```bash
+# Install PM2
+npm install -g pm2
+
+# Start backend
+cd backend
+pm2 start server.js --name "oral-health-backend"
+
+# Start frontend (build first)
 cd frontend
 npm run build
+# Serve with nginx or Apache
 ```
 
-### Backend
+#### Option B: Docker Deployment
 ```bash
-cd backend
-npm start
+# Build and run with Docker Compose
+docker-compose up -d
 ```
 
-## 🔧 Database Setup
+#### Option C: Cloud Deployment
+- **Heroku**: Use provided Procfile
+- **AWS**: Deploy with Elastic Beanstalk
+- **DigitalOcean**: Use App Platform
+- **Vercel**: Frontend deployment
 
-### MongoDB Atlas (Cloud)
-1. Create account at mongodb.com
-2. Create cluster
-3. Get connection string
-4. Update MONGO_URI in .env
+### 5. Monitoring & Maintenance
+- Set up health checks
+- Configure logging (Winston)
+- Monitor database performance
+- Regular security updates
 
-### Local MongoDB
+### 6. Backup Strategy
+- Daily database backups
+- File storage backups (if using local storage)
+- Environment configuration backups
+
+## Quick Deploy Commands
+
 ```bash
-# Install MongoDB
-brew install mongodb/brew/mongodb-community
+# Production build
+cd frontend && npm run build
+cd backend && npm install --production
 
-# Start MongoDB
-brew services start mongodb-community
+# Start services
+pm2 start ecosystem.config.js
 ```
-
-## 🎯 Demo Deployment
-
-### Live Demo URLs
-- **Frontend**: https://your-app.vercel.app
-- **Backend**: https://your-api.railway.app
-- **API Docs**: https://your-api.railway.app/api
-
-### Test Credentials
-- **Admin**: admin@example.com / admin123
-- **Patient**: patient@example.com / patient123
-
-## 📋 Deployment Checklist
-
-- [ ] Environment variables configured
-- [ ] Database connected
-- [ ] Test users created
-- [ ] Frontend build successful
-- [ ] Backend API responding
-- [ ] File uploads working
-- [ ] PDF generation working
-- [ ] S3 integration (if enabled)
-- [ ] CORS configured for production
-- [ ] SSL certificates (HTTPS)
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### CORS Errors
-```javascript
-// backend/server.js
-app.use(cors({
-  origin: ['http://localhost:3000', 'https://your-frontend-url.com'],
-  credentials: true
-}));
-```
-
-#### File Upload Issues
-- Check upload directory permissions
-- Verify multer configuration
-- Ensure file size limits
-
-#### Database Connection
-- Verify MongoDB URI
-- Check network access (Atlas)
-- Confirm credentials
